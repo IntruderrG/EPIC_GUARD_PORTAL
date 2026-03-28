@@ -1,3 +1,4 @@
+import { useAuth } from "../Context/AuthContext";
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -149,8 +150,9 @@ function AlertItem({ time, message, level }) {
 
 // ── Main Dashboard ─────────────────────────────────────────────────
 export default function Dashboard() {
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const guardName = localStorage.getItem("guardName") || "Guard";
+  const guardName = user?.name || "Guard";
   const [streamOnline, setStreamOnline] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [metrics, setMetrics] = useState({
@@ -266,7 +268,7 @@ export default function Dashboard() {
               className="font-bold text-yellow-400 tracking-tight"
               style={{ fontSize: "clamp(0.9rem, 2.5vw, 1.1rem)" }}
             >
-              CyberWarden
+              CYBERWARDEN
             </span>
           </div>
 
@@ -475,7 +477,7 @@ export default function Dashboard() {
           className="text-center text-zinc-800 pb-4"
           style={{ fontSize: "clamp(0.65rem, 1.5vw, 0.7rem)" }}
         >
-          CyberWarden — Where people flow, we keep order.
+          CYBERWARDEN — Where people flow, we keep order.
         </p>
       </main>
     </div>
