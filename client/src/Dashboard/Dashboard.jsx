@@ -1,6 +1,7 @@
 import { useAuth } from "../Context/AuthContext";
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import LiveFeed from "./LiveFeed";
 
 // ── Animated counter hook ──────────────────────────────────────────
 function useCountUp(target, duration = 1000) {
@@ -170,7 +171,30 @@ export default function Dashboard() {
 
   // ── WebSocket — receives live metrics from EC2-Model ───────────
   // Replace WS_URL with your actual EC2-Model WebSocket endpoint
+
+  // Commented
   const WS_URL = import.meta.env.VITE_METRICS_WS_URL || "ws://localhost:4001";
+
+  useEffect(() => {
+    const checkStream = async () => {
+      try {
+        const res = await fetch("https://epic.akiyaa.online/live/stream");
+
+        if (res.ok) {
+          setStreamOnline(true);
+        } else {
+          setStreamOnline(false);
+        }
+      } catch (err) {
+        setStreamOnline(false);
+      }
+    };
+
+    checkStream();
+
+    const interval = setInterval(checkStream, 5000); // check every 5 sec
+    return () => clearInterval(interval);
+  }, []);
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -178,7 +202,7 @@ export default function Dashboard() {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
-      ws.onopen = () => setStreamOnline(true);
+      ws.onopen = () => {};
 
       ws.onmessage = (e) => {
         try {
@@ -189,9 +213,7 @@ export default function Dashboard() {
       };
 
       ws.onclose = () => {
-        setStreamOnline(false);
-        // Auto-reconnect after 3s
-        setTimeout(connect, 3000);
+        setTimeout(connect, 3000); // reconnect but don't touch streamOnline
       };
 
       ws.onerror = () => ws.close();
@@ -374,35 +396,14 @@ export default function Dashboard() {
         </div>
 
         {/* ── Live feed CTA ── */}
-        <div
-          className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden cursor-pointer group"
-          onClick={() => navigate("/feed")}
-        >
-          <div className="relative aspect-video sm:aspect-[21/6] flex items-center justify-center bg-zinc-950">
-            {/* Scanline texture */}
-            <div
-              className="absolute inset-0 opacity-[0.06] pointer-events-none"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 3px)",
-              }}
-            />
-
-            <div className="relative flex flex-col items-center gap-4 text-center px-4">
-              {/* Camera icon with pulse ring */}
-              <div className="relative">
-                {streamOnline && (
-                  <span className="absolute inset-0 rounded-full animate-ping bg-yellow-400 opacity-20 scale-150" />
-                )}
-                <div
-                  className={`w-16 h-16 rounded-full flex items-center justify-center border-2 transition-colors duration-300 ${
-                    streamOnline ?
-                      "border-yellow-400 bg-yellow-400/10 group-hover:bg-yellow-400/20"
-                    : "border-zinc-700 bg-zinc-800"
-                  }`}
-                >
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+          {streamOnline ?
+            <LiveFeed embedded />
+          : <div className="relative aspect-video flex items-center justify-center bg-zinc-950">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center border-2 border-zinc-700 bg-zinc-800">
                   <svg
-                    className={`w-7 h-7 ${streamOnline ? "text-yellow-400" : "text-zinc-600"}`}
+                    className="w-7 h-7 text-zinc-600"
                     fill="none"
                     viewBox="0 0 24 24"
                   >
@@ -415,38 +416,13 @@ export default function Dashboard() {
                     />
                   </svg>
                 </div>
-              </div>
-
-              <div>
-                <p
-                  className="font-semibold text-white group-hover:text-yellow-400 transition-colors duration-200"
-                  style={{ fontSize: "clamp(0.9rem, 2.5vw, 1.1rem)" }}
-                >
-                  {streamOnline ? "View live feed" : "Stream not available"}
-                </p>
-                <p
-                  className="text-zinc-600 mt-1"
-                  style={{ fontSize: "clamp(0.7rem, 2vw, 0.8rem)" }}
-                >
-                  {streamOnline ?
-                    "Click to open full camera view"
-                  : "Waiting for camera connection..."}
+                <p className="text-zinc-500">Stream not available</p>
+                <p className="text-zinc-600 text-sm">
+                  Waiting for camera connection...
                 </p>
               </div>
-
-              {streamOnline && (
-                <div className="flex items-center gap-1.5 bg-yellow-400/10 border border-yellow-400/30 rounded-full px-3 py-1">
-                  <PulseDot active />
-                  <span
-                    className="text-yellow-400 font-medium"
-                    style={{ fontSize: "clamp(0.65rem, 1.5vw, 0.75rem)" }}
-                  >
-                    LIVE
-                  </span>
-                </div>
-              )}
             </div>
-          </div>
+          }
         </div>
 
         {/* ── Recent alerts ── */}
