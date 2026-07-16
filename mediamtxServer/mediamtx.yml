@@ -1,0 +1,12 @@
+logLevel: info
+
+rtmp: yes
+webrtc: yes
+rtsp: yes
+
+paths:
+  live/stream:
+    source: publisher
+
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302

@@ -8,6 +8,7 @@ import Dashboard from "./Dashboard/Dashboard.jsx";
 import LandingPage from "./LandingPage/LandingPage.jsx";
 import Login from "./Credentials/Login.jsx";
 import LiveFeed from "./Dashboard/LiveFeed.jsx";
+import CrowdManagement from "./Componenets/CrowdManagement.jsx";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -18,6 +19,7 @@ createRoot(document.getElementById("root")).render(
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/login" element={<Login />} />
           <Route path="/feed" element={<LiveFeed />} />
+          <Route path="/management" element={<CrowdManagement />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

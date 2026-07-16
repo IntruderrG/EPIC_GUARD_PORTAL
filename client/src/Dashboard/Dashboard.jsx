@@ -3,6 +3,8 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import LiveFeed from "./LiveFeed";
 
+const API_BASE = "https://epic.akiyaa.online";
+
 // ── Animated counter hook ──────────────────────────────────────────
 function useCountUp(target, duration = 1000) {
   const [value, setValue] = useState(0);
@@ -24,38 +26,49 @@ function useCountUp(target, duration = 1000) {
 }
 
 // ── Pulse dot ─────────────────────────────────────────────────────
-function PulseDot({ active }) {
+function PulseDot({ active, color = "yellow" }) {
+  const colors = {
+    yellow: {
+      ping: "bg-yellow-400",
+      dot: "bg-yellow-400",
+      inactive: "bg-zinc-600",
+    },
+    red: { ping: "bg-red-300", dot: "bg-red-300", inactive: "bg-zinc-600" },
+  };
+  const c = colors[color] || colors.yellow;
   return (
     <span className="relative flex h-3 w-3">
       {active && (
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
+        <span
+          className={`animate-ping absolute inline-flex h-full w-full rounded-full ${c.ping} opacity-75`}
+        />
       )}
       <span
-        className={`relative inline-flex rounded-full h-3 w-3 ${
-          active ? "bg-yellow-400" : "bg-zinc-600"
-        }`}
+        className={`relative inline-flex rounded-full h-3 w-3 ${active ? c.dot : c.inactive}`}
       />
     </span>
   );
 }
 
 // ── Stat card ─────────────────────────────────────────────────────
-function StatCard({ label, value, unit = "", accent = false }) {
+function StatCard({ label, value, unit = "", accent = false, danger = false }) {
   const displayed = useCountUp(typeof value === "number" ? value : 0);
   return (
     <div
       className={`
-        rounded-2xl p-5 border flex flex-col gap-1
-        ${
-          accent ?
-            "bg-yellow-400 border-yellow-300"
-          : "bg-zinc-900 border-zinc-800"
-        }
-      `}
+      rounded-2xl p-5 border flex flex-col gap-1
+      ${
+        danger ? "bg-red-600 border-red-500"
+        : accent ? "bg-yellow-400 border-yellow-300"
+        : "bg-zinc-900 border-zinc-800"
+      }
+    `}
     >
       <span
         className={`text-xs font-medium tracking-widest uppercase ${
-          accent ? "text-yellow-900" : "text-zinc-500"
+          danger ? "text-red-100"
+          : accent ? "text-yellow-900"
+          : "text-zinc-500"
         }`}
         style={{ fontSize: "clamp(0.6rem, 1.5vw, 0.7rem)" }}
       >
@@ -63,7 +76,9 @@ function StatCard({ label, value, unit = "", accent = false }) {
       </span>
       <span
         className={`font-bold leading-none ${
-          accent ? "text-black" : "text-white"
+          danger ? "text-white"
+          : accent ? "text-black"
+          : "text-white"
         }`}
         style={{ fontSize: "clamp(1.8rem, 5vw, 2.8rem)" }}
       >
@@ -71,7 +86,9 @@ function StatCard({ label, value, unit = "", accent = false }) {
         {unit && (
           <span
             className={`font-normal ml-1 ${
-              accent ? "text-yellow-800" : "text-zinc-500"
+              danger ? "text-red-200"
+              : accent ? "text-yellow-800"
+              : "text-zinc-500"
             }`}
             style={{ fontSize: "clamp(0.8rem, 2vw, 1rem)" }}
           >
@@ -154,93 +171,209 @@ export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const guardName = user?.name || "Guard";
+
   const [streamOnline, setStreamOnline] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [alertBanner, setAlertBanner] = useState(false);
+  const [alerts, setAlerts] = useState([]);
+  const [countdown, setCountdown] = useState(null);
+  const [countdownActive, setCountdownActive] = useState(false);
+
   const [metrics, setMetrics] = useState({
     headCount: 0,
+    threshold: null,
     peakToday: 0,
     uptime: "00:00",
     zone: "Main Gate",
+    avgVelocity: 0,
+    alert: false,
   });
 
-  // ── Clock ──────────────────────────────────────────────────────
+  const peakRef = useRef(0);
+  const countdownRef = useRef(null);
+  const breachStart = useRef(null);
+  const cooldownRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const startRef = useRef(Date.now());
+
+  // ── Clock ────────────────────────────────────────────────────────
   useEffect(() => {
     const id = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  // ── WebSocket — receives live metrics from EC2-Model ───────────
-  // Replace WS_URL with your actual EC2-Model WebSocket endpoint
-
-  // Commented
-  const WS_URL = import.meta.env.VITE_METRICS_WS_URL || "ws://localhost:4001";
-
+  // ── Uptime ───────────────────────────────────────────────────────
   useEffect(() => {
-    const checkStream = async () => {
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+      const h = String(Math.floor(elapsed / 3600)).padStart(2, "0");
+      const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
+      setMetrics((prev) => ({ ...prev, uptime: `${h}:${m}` }));
+    }, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Stream check ─────────────────────────────────────────────────
+  useEffect(() => {
+    const check = async () => {
       try {
         const res = await fetch("https://epic.akiyaa.online/live/stream");
-
-        if (res.ok) {
-          setStreamOnline(true);
-        } else {
-          setStreamOnline(false);
-        }
-      } catch (err) {
+        setStreamOnline(res.ok);
+      } catch {
         setStreamOnline(false);
       }
     };
-
-    checkStream();
-
-    const interval = setInterval(checkStream, 5000); // check every 5 sec
-    return () => clearInterval(interval);
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
   }, []);
-  const wsRef = useRef(null);
 
+  // ── Cancel handler ───────────────────────────────────────────────
+  const handleCancelAlert = () => {
+    const token = localStorage.getItem("token");
+    cancelledRef.current = true;
+    setCountdownActive(false);
+    setCountdown(null);
+    breachStart.current = null;
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    fetch(`${API_BASE}/api/crowd/cancel-alert`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    console.log("[ALERT] Guard cancelled");
+    const now = new Date().toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+    setAlerts((prev) => [
+      {
+        time: now,
+        message: "Guard cancelled alert — SMS not sent",
+        level: "medium",
+        _ts: Date.now(),
+      },
+      ...prev.slice(0, 19),
+    ]);
+  };
+
+  // ── Live headcount poll ──────────────────────────────────────────
   useEffect(() => {
-    const connect = () => {
-      const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
+    const token = localStorage.getItem("token");
 
-      ws.onopen = () => {};
+    const fetchLatest = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/crowd/latest`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        console.log("[POLL] status:", res.status);
+        if (!res.ok) return;
 
-      ws.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          // Expected shape: { headCount, peakToday, uptime, zone }
-          setMetrics((prev) => ({ ...prev, ...data }));
-        } catch (_) {}
-      };
+        const data = await res.json();
+        console.log("[POLL] data ✅:", data);
 
-      ws.onclose = () => {
-        setTimeout(connect, 3000); // reconnect but don't touch streamOnline
-      };
+        const count = data.count ?? 0;
+        const threshold = data.threshold ?? null;
+        const isAlert = data.alert ?? false;
+        const velocity = data.avgVelocity ?? 0;
+        const zone = data.zone ?? "Main Gate";
 
-      ws.onerror = () => ws.close();
+        if (count > peakRef.current) peakRef.current = count;
+
+        setMetrics((prev) => ({
+          ...prev,
+          headCount: count,
+          threshold,
+          peakToday: peakRef.current,
+          zone,
+          avgVelocity: velocity,
+          alert: isAlert,
+        }));
+
+        setAlertBanner(isAlert);
+
+        // ── START COUNTDOWN ──────────────────────────────────────
+        if (isAlert && !cooldownRef.current && !cancelledRef.current) {
+          if (!breachStart.current) {
+            breachStart.current = Date.now();
+            setCountdownActive(true);
+            setCountdown(30);
+
+            let secs = 30;
+            countdownRef.current = setInterval(() => {
+              secs -= 1;
+              setCountdown(secs);
+
+              if (secs <= 0) {
+                clearInterval(countdownRef.current);
+                countdownRef.current = null;
+                breachStart.current = null;
+                setCountdownActive(false);
+                setCountdown(null);
+
+                if (!cancelledRef.current) {
+                  fetch(`${API_BASE}/api/crowd/trigger-alert`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                  })
+                    .then((r) => r.json())
+                    .then((d) => {
+                      console.log("[SNS] result:", d);
+                      cooldownRef.current = true;
+                      const now = new Date().toLocaleTimeString("en-IN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: true,
+                      });
+                      setAlerts((prev) => [
+                        {
+                          time: now,
+                          message: `SMS + Email sent — ${count} people detected (limit: ${threshold})`,
+                          level: "high",
+                          _ts: Date.now(),
+                        },
+                        ...prev.slice(0, 19),
+                      ]);
+                    });
+                }
+              }
+            }, 1000);
+          }
+        }
+
+        // ── RESET when count drops below threshold ───────────────
+        if (!isAlert && (cooldownRef.current || cancelledRef.current)) {
+          cooldownRef.current = false;
+          cancelledRef.current = false;
+          breachStart.current = null;
+          setCountdownActive(false);
+          setCountdown(null);
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+          }
+          fetch(`${API_BASE}/api/crowd/reset-alert`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      } catch (err) {
+        console.warn("[POLL]", err.message);
+      }
     };
 
-    connect();
-    return () => wsRef.current?.close();
+    fetchLatest();
+    const id = setInterval(fetchLatest, 3000);
+    return () => {
+      clearInterval(id);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
   }, []);
-
-  // ── Sample alerts (replace with real WS events) ────────────────
-  const alerts = [
-    {
-      time: "Just now",
-      message: "Head count exceeded threshold — 47 people detected",
-      level: "high",
-    },
-    {
-      time: "4 min ago",
-      message: "Camera feed momentarily dropped, auto-recovered",
-      level: "medium",
-    },
-    {
-      time: "18 min ago",
-      message: "Shift started — stream connected successfully",
-      level: "low",
-    },
-  ];
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -273,10 +406,59 @@ export default function Dashboard() {
         }}
       />
 
+      {/* ── COUNTDOWN BANNER ── */}
+      {countdownActive && countdown !== null && (
+        <div className="sticky top-0 z-50 bg-red-600 text-white px-4 py-3">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <PulseDot active color="red" />
+              <div>
+                <span className="font-bold text-sm">
+                  ⚠ THRESHOLD BREACHED — {metrics.headCount} people detected
+                </span>
+                <span className="text-red-200 text-sm ml-3">
+                  SMS + Email sending in{" "}
+                  <span className="font-bold text-white tabular-nums">
+                    {countdown}s
+                  </span>
+                  ...
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleCancelAlert}
+              className="bg-white text-red-600 font-bold text-sm px-4 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0"
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STATIC ALERT BANNER — after SMS sent ── */}
+      {alertBanner && !countdownActive && (
+        <div className="sticky top-0 z-50 bg-red-800 text-white px-4 py-2.5">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <PulseDot active color="red" />
+              <span className="font-semibold text-sm">
+                ⚠ ALERT ACTIVE — {metrics.headCount} people detected
+                {metrics.threshold && ` (limit: ${metrics.threshold})`}
+              </span>
+            </div>
+            <button
+              onClick={() => setAlertBanner(false)}
+              className="text-red-200 hover:text-white text-xs underline shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Top navbar ── */}
       <header className="relative border-b border-zinc-800 bg-black/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
-          {/* Brand */}
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-yellow-400 flex items-center justify-center shrink-0">
               <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none">
@@ -294,7 +476,6 @@ export default function Dashboard() {
             </span>
           </div>
 
-          {/* Guard info + logout */}
           <div className="flex items-center gap-3 sm:gap-5">
             <div className="hidden sm:flex items-center gap-2">
               <PulseDot active={streamOnline} />
@@ -305,7 +486,6 @@ export default function Dashboard() {
                 {streamOnline ? "Stream live" : "Stream offline"}
               </span>
             </div>
-
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
                 <svg
@@ -329,7 +509,12 @@ export default function Dashboard() {
                 {guardName}
               </span>
             </div>
-
+            <button
+              onClick={() => window.open("/management", "_blank")}
+              className="bg-yellow-400 text-black font-semibold px-3 py-1.5 rounded-lg text-xs hover:bg-yellow-300 transition"
+            >
+              Management
+            </button>
             <button
               onClick={handleLogout}
               className="text-zinc-500 hover:text-red-400 transition-colors duration-200 p-1"
@@ -351,7 +536,6 @@ export default function Dashboard() {
 
       {/* ── Main content ── */}
       <main className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        {/* Greeting + time block */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
           <div>
             <h1
@@ -385,17 +569,22 @@ export default function Dashboard() {
 
         {/* ── Stat cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <StatCard label="Live head count" value={metrics.headCount} accent />
+          <StatCard
+            label="Live head count"
+            value={metrics.headCount}
+            accent={!metrics.alert}
+            danger={metrics.alert}
+          />
+          <StatCard label="Threshold" value={metrics.threshold ?? "—"} />
           <StatCard
             label="Peak today"
             value={metrics.peakToday}
             unit="people"
           />
           <StatCard label="Stream uptime" value={metrics.uptime} />
-          <StatCard label="Active zone" value={metrics.zone} />
         </div>
 
-        {/* ── Live feed CTA ── */}
+        {/* ── Live feed ── */}
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden">
           {streamOnline ?
             <LiveFeed embedded />
@@ -425,7 +614,7 @@ export default function Dashboard() {
           }
         </div>
 
-        {/* ── Recent alerts ── */}
+        {/* ── Alert log ── */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2
@@ -442,13 +631,14 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="space-y-2">
-            {alerts.map((a, i) => (
-              <AlertItem key={i} {...a} />
-            ))}
+            {alerts.length === 0 ?
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-4 text-center text-zinc-600 text-sm">
+                No alerts this shift — all clear
+              </div>
+            : alerts.map((a, i) => <AlertItem key={i} {...a} />)}
           </div>
         </div>
 
-        {/* ── Footer ── */}
         <p
           className="text-center text-zinc-800 pb-4"
           style={{ fontSize: "clamp(0.65rem, 1.5vw, 0.7rem)" }}
