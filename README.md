@@ -5,7 +5,7 @@ Real-time crowd density detection and monitoring system for security guards, pow
 **Live:** [akiyaa.online](https://akiyaa.online)
 
 ![CyberWarden landing page — live detection preview](docs/screenshots/hero.png)
-*Every person, every second — live head-count overlay on the guard's camera feed.*
+_Every person, every second — live head-count overlay on the guard's camera feed._
 
 ## Table of contents
 
@@ -28,42 +28,7 @@ CyberWarden turns any phone into a surveillance camera. A guard (or fixed camera
 
 ## System architecture
 
-The system is split across two dedicated AWS EC2 instances so that heavy AI inference never competes with — or slows down — the guard-facing video feed:
-
-```mermaid
-flowchart LR
-    subgraph camera["Camera Source"]
-        LB[Larix Broadcaster<br/>Phone Camera]
-    end
-
-    subgraph modelEC2["EC2 — Model Instance"]
-        YOLO[YOLOv8<br/>Head detection + density]
-        WS[WebSocket Server<br/>Live metrics]
-    end
-
-    subgraph appEC2["EC2 — App Instance"]
-        NGINX[NGINX<br/>RTMP to HLS repack]
-        API[Express API]
-        AUTH[JWT Auth Middleware]
-        DB[(MongoDB<br/>CrowdLog, User)]
-    end
-
-    subgraph guard["Guard Portal (Browser)"]
-        UI[React + Vite<br/>Live video + overlays]
-    end
-
-    LB -- RTMP :1935 --> YOLO
-    LB -- RTMP :1935 --> NGINX
-    YOLO --> WS
-    NGINX -- HLS --> UI
-    WS -- Real-time metrics --> UI
-    UI --> API --> AUTH --> DB
-
-    classDef node fill:#000000,stroke:#F5C518,color:#ffffff;
-    class LB,YOLO,WS,NGINX,API,AUTH,DB,UI node;
-```
-
-**Why two instances:** the raw video path (RTMP to HLS to guard's browser) never touches the model. Compute-heavy AI inference runs entirely on its own instance, so a spike in processing load never introduces lag or drops in the live feed the guard is watching.
+![Deployment architecture diagram](docs/screenshots/ArchetectureFinal.png)
 
 ## How it works
 
@@ -78,15 +43,15 @@ flowchart LR
 
 ![Feature grid — real-time head counting, sub-2s delivery, threshold alerting, dual EC2, JWT auth, device-agnostic](docs/screenshots/features.png)
 
-| Feature | Description |
-|---|---|
-| **Real-time head counting** | YOLOv8 processes every frame from the RTMP stream, counting people with ~98.7% detection accuracy. |
-| **Density heatmaps** | Per-zone crowd density is computed from head-count data and visualized as a live heatmap alongside the video feed. |
-| **Threshold alerting** | Guards configure a crowd-density threshold per zone; the system fires an instant alert the moment it's crossed. |
-| **Sub-2s feed delivery** | RTMP to HLS repacking on the App instance delivers the camera feed to the guard's browser with minimal latency. |
-| **Dual EC2 architecture** | Model inference and app/video delivery run on separate EC2 instances, so AI processing load never affects feed latency. |
-| **JWT-gated access** | Every guard authenticates with credentials; sessions are token-protected and scoped per shift. |
-| **Elastic, device-agnostic** | The guard portal auto-scales from a 320px phone to a 4K monitor — no app install, pure browser. |
+| Feature                      | Description                                                                                                             |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Real-time head counting**  | YOLOv8 processes every frame from the RTMP stream, counting people with ~98.7% detection accuracy.                      |
+| **Density heatmaps**         | Per-zone crowd density is computed from head-count data and visualized as a live heatmap alongside the video feed.      |
+| **Threshold alerting**       | Guards configure a crowd-density threshold per zone; the system fires an instant alert the moment it's crossed.         |
+| **Sub-2s feed delivery**     | RTMP to HLS repacking on the App instance delivers the camera feed to the guard's browser with minimal latency.         |
+| **Dual EC2 architecture**    | Model inference and app/video delivery run on separate EC2 instances, so AI processing load never affects feed latency. |
+| **JWT-gated access**         | Every guard authenticates with credentials; sessions are token-protected and scoped per shift.                          |
+| **Elastic, device-agnostic** | The guard portal auto-scales from a 320px phone to a 4K monitor — no app install, pure browser.                         |
 
 ## Project structure
 
@@ -137,6 +102,7 @@ Guards log in with assigned credentials to access live camera feeds, real-time d
 ![Guard login CTA — Your shift, your command](docs/screenshots/guard-portal.png)
 
 Once authenticated, the portal shows:
+
 - Live HLS video feed per camera zone
 - Real-time head-count overlay
 - Density heatmap
@@ -153,6 +119,7 @@ Once authenticated, the portal shows:
 ## Running locally
 
 **Frontend:**
+
 ```bash
 cd client
 npm install
@@ -160,6 +127,7 @@ npm run dev
 ```
 
 **Backend:**
+
 ```bash
 cd server
 npm install
